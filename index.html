@@ -24,29 +24,33 @@
           <div class="panel-head">
             <div>
               <p class="section-kicker">입력</p>
-              <h2 id="intakeTitle">구매내역 추가</h2>
+              <h2 id="intakeTitle">제품 스캔 등록</h2>
             </div>
-            <span class="status-pill" id="apiStatus">이미지 추출 준비</span>
+            <span class="status-pill" id="apiStatus">스캐너 준비</span>
           </div>
 
-          <label class="dropzone" for="receiptImage">
-            <input id="receiptImage" type="file" accept="image/*">
-            <span class="dropzone-title">쿠팡/컬리 주문 화면 이미지 업로드</span>
-            <span class="dropzone-copy">상품명, 수량, 구매일을 자동 추출하고 확인 목록에 올립니다.</span>
+          <div class="scanner-box">
+            <video id="scanVideo" playsinline muted hidden></video>
+            <div class="scanner-placeholder" id="scannerPlaceholder">
+              <strong>바코드나 QR코드를 카메라에 맞추세요</strong>
+              <span>EAN-13, EAN-8, UPC, Code 128, QR 코드 인식을 시도합니다.</span>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="primary-button" id="startScanButton" type="button">카메라 스캔</button>
+            <button class="secondary-button" id="stopScanButton" type="button" disabled>스캔 중지</button>
+          </div>
+
+          <label class="compact-upload" for="barcodeImageInput">
+            <input id="barcodeImageInput" type="file" accept="image/*">
+            바코드/QR 이미지로 스캔
           </label>
-
-          <div class="image-preview" id="imagePreview" hidden>
-            <img id="receiptPreview" alt="업로드한 구매내역 미리보기">
-          </div>
 
           <div class="field-grid">
             <label>
-              플랫폼
-              <select id="platformInput">
-                <option value="쿠팡">쿠팡</option>
-                <option value="마켓컬리">마켓컬리</option>
-                <option value="기타">기타</option>
-              </select>
+              바코드/QR 값
+              <input id="barcodeInput" type="text" inputmode="numeric" placeholder="숫자 바코드 또는 QR 내용">
             </label>
             <label>
               구매일
@@ -54,15 +58,35 @@
             </label>
           </div>
 
-          <label>
-            수동 입력
-            <textarea id="manualInput" rows="4" placeholder="예: 무항생제 계란 30구 1개&#10;국산 두부 300g 2팩&#10;샐러드 채소 1봉"></textarea>
-          </label>
+          <button class="secondary-button wide tight" id="lookupButton" type="button">제품 조회</button>
 
-          <div class="button-row">
-            <button class="primary-button" id="extractButton" type="button">이미지에서 추출</button>
-            <button class="secondary-button" id="manualButton" type="button">수동 입력 추가</button>
+          <div class="product-form">
+            <label>
+              제품명
+              <input id="productNameInput" type="text" placeholder="예: 국산 두부 300g">
+            </label>
+            <div class="field-grid">
+              <label>
+                수량
+                <input id="quantityInput" type="text" placeholder="1개">
+              </label>
+              <label>
+                보관
+                <select id="storageInput">
+                  <option value="냉장">냉장</option>
+                  <option value="냉동">냉동</option>
+                  <option value="실온">실온</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              소비기한
+              <input id="expiryDateInput" type="date">
+            </label>
+            <p class="form-hint" id="productHint">스캔 후 조회 결과를 확인하고, 실제 포장 소비기한이 보이면 날짜를 수정하세요.</p>
           </div>
+
+          <button class="primary-button wide" id="addProductButton" type="button">대기 목록에 추가</button>
         </section>
 
         <section class="panel review-panel" aria-labelledby="reviewTitle">
@@ -74,7 +98,7 @@
             <span class="count-badge" id="draftCount">0개</span>
           </div>
           <div class="draft-list" id="draftList"></div>
-          <div class="empty-state" id="draftEmpty">이미지 추출 또는 수동 입력으로 재료를 추가하세요.</div>
+          <div class="empty-state" id="draftEmpty">제품을 스캔하거나 직접 입력해 재료를 추가하세요.</div>
           <button class="primary-button wide" id="saveDraftsButton" type="button">냉장고에 저장</button>
         </section>
 
@@ -167,7 +191,6 @@
       </article>
     </template>
 
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="app.js" type="module"></script>
   </body>
 </html>
