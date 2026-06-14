@@ -1,6 +1,6 @@
 # 냉장고 MVP
 
-쿠팡/컬리 구매내역 이미지를 올려 냉장고 재료를 기록하고, 소비기한 캘린더와 요리 추천을 확인하는 Vercel 배포용 MVP입니다.
+제품의 QR코드나 바코드를 스캔해 냉장고 재료를 기록하고, 소비기한 캘린더와 요리 추천을 확인하는 Vercel 배포용 MVP입니다.
 
 배포 URL: https://deploy-fridge-queue-mvp.vercel.app
 GitHub 저장소: https://github.com/nalm/fridge-queue-mvp
@@ -8,8 +8,15 @@ GitHub 저장소: https://github.com/nalm/fridge-queue-mvp
 ## 구성
 
 - `index.html`, `styles.css`, `app.js`: 브라우저 앱
-- `api/extract.js`: 구매내역 이미지에서 재료를 추출하는 Vercel 서버리스 함수
+- `api/product.js`: 바코드로 공개 제품 데이터베이스를 조회하는 Vercel 서버리스 함수
 - `vercel.json`: 정적 앱 + API 배포 설정
+
+## 현재 입력 방식
+
+- 카메라로 QR코드/바코드 스캔
+- 바코드/QR 이미지 파일 업로드 후 스캔
+- 바코드 숫자 또는 QR 내용 직접 입력
+- 공개 제품 데이터베이스에서 제품명을 찾지 못하면 사용자가 제품명, 수량, 소비기한을 직접 입력
 
 ## 로컬 실행
 
@@ -25,15 +32,11 @@ cmd /c npm.cmd run dev
 
 브라우저에서 `http://localhost:3000`을 엽니다.
 
-## 이미지 추출 API 설정
+## 제품 조회
 
-Vercel 프로젝트 환경변수에 다음 값을 설정합니다.
+서버리스 함수는 Open Food Facts의 제품 조회 API를 사용합니다. 읽기 요청은 별도 인증 없이 동작하지만, API 정책에 따라 식별 가능한 User-Agent를 전송합니다.
 
-- `OPENAI_API_KEY`: OpenAI API 키
-- `OPENAI_MODEL`: 선택 사항. 기본값은 `gpt-5.5`
-
-키가 없으면 앱은 이미지 미리보기, 수동 입력, 샘플 데이터, 냉장고/캘린더/요리 추천 흐름을 계속 사용할 수 있습니다.
-또한 브라우저에서 Tesseract.js OCR을 불러와 구매내역 이미지에서 1차 텍스트 추출을 시도합니다. 정확도는 OpenAI API 방식보다 낮을 수 있어, 추출 후 확인 목록에서 사용자가 수정하는 흐름을 기본으로 둡니다.
+제품 DB에서 찾지 못하는 국내 신선식품이나 자체 PB 상품은 직접 입력으로 등록할 수 있습니다. 소비기한은 포장에 표시된 날짜를 우선으로 사용하고, 없으면 앱이 식품군별 기본 보관 기간으로 추정합니다.
 
 ## 배포
 
