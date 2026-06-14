@@ -1,0 +1,13 @@
+{
+  "name": "fridge-queue-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev --listen 3000",
+    "check": "node --check app.js && node --check api/extract.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
