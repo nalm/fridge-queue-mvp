@@ -1,4 +1,5 @@
 const STORAGE_KEY = "fridge-mvp-items";
+const PRODUCT_CATALOG_KEY = "fridge-mvp-product-catalog";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const shelfLifeRules = [
@@ -62,6 +63,7 @@ const recipeRules = [
 const state = {
   drafts: [],
   items: readItems(),
+  productCatalog: readProductCatalog(),
   filter: "active",
   visibleMonth: startOfMonth(new Date()),
   html5Scanner: null,
@@ -352,6 +354,17 @@ async function lookupBarcode(rawCode) {
     return;
   }
 
+  const cachedProduct = state.productCatalog[code];
+  if (cachedProduct) {
+    applyProductLookup(code, {
+      found: true,
+      source: "local",
+      sourceLabel: "내 제품 사전",
+      product: cachedProduct
+    });
+    return;
+  }
+
   setStatus("제품 조회 중", "busy");
   try {
     const response = await fetch(`/api/product?code=${encodeURIComponent(code)}`);
@@ -366,7 +379,7 @@ async function lookupBarcode(rawCode) {
     els.quantityInput.value = els.quantityInput.value || "1개";
     setExpiryFromName("");
     setStatus("제품명을 직접 입력하세요", "warn");
-    els.productHint.textContent = "조회가 실패했습니다. 제품명, 수량, 소비기한을 직접 입력해 저장할 수 있습니다.";
+    els.productHint.textContent = "조회가 실패했습니다. 직접 입력해 추가하면 이 바코드는 내 제품 사전에 저장되어 다음 스캔부터 자동 입력됩니다.";
   }
 }
 
@@ -392,7 +405,7 @@ function applyProductLookup(code, payload) {
   els.quantityInput.value = els.quantityInput.value || "1개";
   setExpiryFromName("");
   setStatus("제품명을 직접 입력하세요", "warn");
-  els.productHint.textContent = "공개 제품 DB에서 찾지 못했습니다. 이름을 직접 입력하면 다음부터 냉장고 재료로 관리됩니다.";
+  els.productHint.textContent = "공개 제품 DB에서 찾지 못했습니다. 직접 입력해 추가하면 이 바코드는 내 제품 사전에 저장됩니다.";
 }
 
 function addProductDraft() {
@@ -421,9 +434,24 @@ function addProductDraft() {
   };
 
   state.drafts = [draft, ...state.drafts];
+  if (code) {
+    rememberProduct(code, draft);
+  }
   clearProductForm();
   setStatus("대기 목록에 추가됨", "ok");
   renderDrafts();
+}
+
+function rememberProduct(code, draft) {
+  state.productCatalog[code] = {
+    name: draft.name,
+    quantity: draft.quantity,
+    category: draft.category,
+    storage: draft.storage,
+    source: draft.confidence,
+    updatedAt: new Date().toISOString()
+  };
+  persistProductCatalog();
 }
 
 function clearProductForm() {
@@ -460,11 +488,39 @@ async function createBarcodeDetector() {
 }
 
 function normalizeScannedCode(value) {
-  return String(value || "")
-    .trim()
-    .replace(/^https?:\/\/[^?]+\?/i, "")
-    .replace(/^barcode[:=]/i, "")
-    .trim();
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const prefixed = raw.match(/^(?:barcode|gtin|code|ean|upc)[:=]\s*([0-9]{6,18})$/i);
+  if (prefixed) return prefixed[1];
+
+  const gs1ApplicationId = raw.match(/\(01\)\s*([0-9]{8,14})/);
+  if (gs1ApplicationId) return gs1ApplicationId[1];
+
+  try {
+    const url = new URL(raw);
+    const queryKeys = ["gtin", "barcode", "code", "ean", "upc", "product_code", "productCode"];
+    for (const key of queryKeys) {
+      const queryValue = url.searchParams.get(key);
+      const queryDigits = bestBarcodeCandidate(queryValue);
+      if (queryDigits) return queryDigits;
+    }
+
+    const gs1DigitalLink = url.pathname.match(/\/01\/([0-9]{8,14})(?:\/|$)/);
+    if (gs1DigitalLink) return gs1DigitalLink[1];
+
+    const pathDigits = bestBarcodeCandidate(url.pathname);
+    if (pathDigits) return pathDigits;
+  } catch {}
+
+  return bestBarcodeCandidate(raw) || raw;
+}
+
+function bestBarcodeCandidate(value) {
+  const candidates = String(value || "").match(/[0-9]{6,18}/g) || [];
+  if (!candidates.length) return "";
+  const preferredLengths = [13, 14, 12, 8];
+  return preferredLengths.map((length) => candidates.find((candidate) => candidate.length === length)).find(Boolean) || candidates[0];
 }
 
 function loadSample() {
@@ -784,6 +840,18 @@ function readItems() {
 
 function persistItems() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+}
+
+function readProductCatalog() {
+  try {
+    return JSON.parse(localStorage.getItem(PRODUCT_CATALOG_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function persistProductCatalog() {
+  localStorage.setItem(PRODUCT_CATALOG_KEY, JSON.stringify(state.productCatalog));
 }
 
 function parseDateInput(value) {
