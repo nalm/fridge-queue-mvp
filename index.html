@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>냉장고 큐</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Fridge MVP</p>
+          <h1>냉장고 큐</h1>
+        </div>
+        <div class="top-actions">
+          <button class="ghost-button" id="sampleButton" type="button">샘플 불러오기</button>
+          <button class="primary-button" id="exportButton" type="button">캘린더 내보내기</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel intake-panel" aria-labelledby="intakeTitle">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">입력</p>
+              <h2 id="intakeTitle">구매내역 추가</h2>
+            </div>
+            <span class="status-pill" id="apiStatus">이미지 추출 준비</span>
+          </div>
+
+          <label class="dropzone" for="receiptImage">
+            <input id="receiptImage" type="file" accept="image/*">
+            <span class="dropzone-title">쿠팡/컬리 주문 화면 이미지 업로드</span>
+            <span class="dropzone-copy">상품명, 수량, 구매일을 자동 추출하고 확인 목록에 올립니다.</span>
+          </label>
+
+          <div class="image-preview" id="imagePreview" hidden>
+            <img id="receiptPreview" alt="업로드한 구매내역 미리보기">
+          </div>
+
+          <div class="field-grid">
+            <label>
+              플랫폼
+              <select id="platformInput">
+                <option value="쿠팡">쿠팡</option>
+                <option value="마켓컬리">마켓컬리</option>
+                <option value="기타">기타</option>
+              </select>
+            </label>
+            <label>
+              구매일
+              <input id="purchaseDateInput" type="date">
+            </label>
+          </div>
+
+          <label>
+            수동 입력
+            <textarea id="manualInput" rows="4" placeholder="예: 무항생제 계란 30구 1개&#10;국산 두부 300g 2팩&#10;샐러드 채소 1봉"></textarea>
+          </label>
+
+          <div class="button-row">
+            <button class="primary-button" id="extractButton" type="button">이미지에서 추출</button>
+            <button class="secondary-button" id="manualButton" type="button">수동 입력 추가</button>
+          </div>
+        </section>
+
+        <section class="panel review-panel" aria-labelledby="reviewTitle">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">확인</p>
+              <h2 id="reviewTitle">추가 대기 목록</h2>
+            </div>
+            <span class="count-badge" id="draftCount">0개</span>
+          </div>
+          <div class="draft-list" id="draftList"></div>
+          <div class="empty-state" id="draftEmpty">이미지 추출 또는 수동 입력으로 재료를 추가하세요.</div>
+          <button class="primary-button wide" id="saveDraftsButton" type="button">냉장고에 저장</button>
+        </section>
+
+        <section class="panel inventory-panel" aria-labelledby="inventoryTitle">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">냉장고</p>
+              <h2 id="inventoryTitle">먼저 먹을 재료</h2>
+            </div>
+            <div class="segmented-control" role="tablist" aria-label="재료 보기 필터">
+              <button class="active" type="button" data-filter="active">남은 재료</button>
+              <button type="button" data-filter="used">사용 완료</button>
+            </div>
+          </div>
+          <div class="stats-row">
+            <div>
+              <strong id="urgentCount">0</strong>
+              <span>3일 내</span>
+            </div>
+            <div>
+              <strong id="activeCount">0</strong>
+              <span>보관 중</span>
+            </div>
+            <div>
+              <strong id="usedCount">0</strong>
+              <span>사용 완료</span>
+            </div>
+          </div>
+          <div class="inventory-list" id="inventoryList"></div>
+          <div class="empty-state" id="inventoryEmpty">아직 냉장고에 저장된 재료가 없습니다.</div>
+        </section>
+
+        <section class="panel calendar-panel" aria-labelledby="calendarTitle">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">캘린더</p>
+              <h2 id="calendarTitle">소비기한 달력</h2>
+            </div>
+            <div class="month-nav">
+              <button class="icon-button" id="prevMonth" type="button" aria-label="이전 달">&lt;</button>
+              <strong id="monthLabel"></strong>
+              <button class="icon-button" id="nextMonth" type="button" aria-label="다음 달">&gt;</button>
+            </div>
+          </div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+
+        <section class="panel recipe-panel" aria-labelledby="recipeTitle">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">추천</p>
+              <h2 id="recipeTitle">남은 재료로 가능한 요리</h2>
+            </div>
+            <span class="status-pill">임박 재료 우선</span>
+          </div>
+          <div class="recipe-list" id="recipeList"></div>
+          <div class="empty-state" id="recipeEmpty">재료를 저장하면 추천 요리가 표시됩니다.</div>
+        </section>
+      </main>
+    </div>
+
+    <template id="draftTemplate">
+      <article class="draft-item">
+        <div class="draft-fields">
+          <label>
+            재료명
+            <input data-field="name" type="text">
+          </label>
+          <label>
+            수량
+            <input data-field="quantity" type="text">
+          </label>
+          <label>
+            보관
+            <select data-field="storage">
+              <option value="냉장">냉장</option>
+              <option value="냉동">냉동</option>
+              <option value="실온">실온</option>
+            </select>
+          </label>
+          <label>
+            소비기한
+            <input data-field="expiresAt" type="date">
+          </label>
+        </div>
+        <div class="draft-meta">
+          <span data-field="confidence"></span>
+          <button class="text-button" data-action="remove-draft" type="button">삭제</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
