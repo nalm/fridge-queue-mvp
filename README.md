@@ -2,6 +2,9 @@
 
 쿠팡/컬리 구매내역 이미지를 올려 냉장고 재료를 기록하고, 소비기한 캘린더와 요리 추천을 확인하는 Vercel 배포용 MVP입니다.
 
+배포 URL: https://deploy-fridge-queue-mvp.vercel.app
+GitHub 저장소: https://github.com/nalm/fridge-queue-mvp
+
 ## 구성
 
 - `index.html`, `styles.css`, `app.js`: 브라우저 앱
