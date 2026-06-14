@@ -27,7 +27,7 @@ const recipeRules = [
     needs: ["샐러드", "닭"],
     optional: ["토마토", "계란"],
     time: "10분",
-    copy: "채소를 먼저 쓰고 단백질을 얹는 조합입니다. 남은 요거트가 있으면 드레싱으로 돌릴 수 있습니다."
+    copy: "채소를 먼저 쓰고 단백질을 얹는 조합입니다."
   },
   {
     title: "채소 계란 볶음",
@@ -64,19 +64,28 @@ const state = {
   items: readItems(),
   filter: "active",
   visibleMonth: startOfMonth(new Date()),
-  selectedImage: null
+  scannerStream: null,
+  scanTimer: null,
+  scanBusy: false,
+  currentProduct: null
 };
 
 const els = {
   apiStatus: document.querySelector("#apiStatus"),
-  receiptImage: document.querySelector("#receiptImage"),
-  receiptPreview: document.querySelector("#receiptPreview"),
-  imagePreview: document.querySelector("#imagePreview"),
-  platformInput: document.querySelector("#platformInput"),
+  scanVideo: document.querySelector("#scanVideo"),
+  scannerPlaceholder: document.querySelector("#scannerPlaceholder"),
+  startScanButton: document.querySelector("#startScanButton"),
+  stopScanButton: document.querySelector("#stopScanButton"),
+  barcodeImageInput: document.querySelector("#barcodeImageInput"),
+  barcodeInput: document.querySelector("#barcodeInput"),
+  lookupButton: document.querySelector("#lookupButton"),
+  productNameInput: document.querySelector("#productNameInput"),
+  quantityInput: document.querySelector("#quantityInput"),
+  storageInput: document.querySelector("#storageInput"),
+  expiryDateInput: document.querySelector("#expiryDateInput"),
   purchaseDateInput: document.querySelector("#purchaseDateInput"),
-  manualInput: document.querySelector("#manualInput"),
-  extractButton: document.querySelector("#extractButton"),
-  manualButton: document.querySelector("#manualButton"),
+  productHint: document.querySelector("#productHint"),
+  addProductButton: document.querySelector("#addProductButton"),
   sampleButton: document.querySelector("#sampleButton"),
   exportButton: document.querySelector("#exportButton"),
   draftList: document.querySelector("#draftList"),
@@ -101,14 +110,21 @@ init();
 
 function init() {
   els.purchaseDateInput.value = toDateInputValue(new Date());
+  setExpiryFromName("");
   bindEvents();
   render();
 }
 
 function bindEvents() {
-  els.receiptImage.addEventListener("change", handleImageChange);
-  els.extractButton.addEventListener("click", extractFromImage);
-  els.manualButton.addEventListener("click", addManualDrafts);
+  els.startScanButton.addEventListener("click", startCameraScan);
+  els.stopScanButton.addEventListener("click", stopCameraScan);
+  els.barcodeImageInput.addEventListener("change", scanImageFile);
+  els.lookupButton.addEventListener("click", () => lookupBarcode(els.barcodeInput.value));
+  els.barcodeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") lookupBarcode(els.barcodeInput.value);
+  });
+  els.productNameInput.addEventListener("input", () => setExpiryFromName(els.productNameInput.value));
+  els.addProductButton.addEventListener("click", addProductDraft);
   els.sampleButton.addEventListener("click", loadSample);
   els.saveDraftsButton.addEventListener("click", saveDrafts);
   els.exportButton.addEventListener("click", exportIcs);
@@ -130,129 +146,238 @@ function bindEvents() {
   });
 }
 
-function handleImageChange(event) {
-  const file = event.target.files?.[0];
-  state.selectedImage = file || null;
-  if (!file) {
-    els.imagePreview.hidden = true;
-    els.receiptPreview.removeAttribute("src");
+async function startCameraScan() {
+  const detector = await createBarcodeDetector();
+  if (!detector) {
+    setStatus("이 브라우저는 카메라 바코드 인식을 지원하지 않습니다", "warn");
     return;
   }
-  const url = URL.createObjectURL(file);
-  els.receiptPreview.src = url;
-  els.imagePreview.hidden = false;
-  els.apiStatus.textContent = "이미지 선택됨";
-}
-
-async function extractFromImage() {
-  if (!state.selectedImage) {
-    setStatus("이미지를 먼저 선택하세요", "warn");
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus("카메라 접근을 지원하지 않는 브라우저입니다", "warn");
     return;
   }
-
-  setStatus("이미지 분석 중", "busy");
-  els.extractButton.disabled = true;
 
   try {
-    const imageData = await fileToDataUrl(state.selectedImage);
-    const response = await fetch("/api/extract", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image: imageData,
-        platform: els.platformInput.value,
-        purchaseDate: els.purchaseDateInput.value
-      })
+    state.scannerStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
     });
+    els.scanVideo.srcObject = state.scannerStream;
+    els.scanVideo.hidden = false;
+    els.scannerPlaceholder.hidden = true;
+    await els.scanVideo.play();
+    state.scanTimer = window.setInterval(() => scanVideoFrame(detector), 700);
+    els.startScanButton.disabled = true;
+    els.stopScanButton.disabled = false;
+    setStatus("스캔 중", "busy");
+  } catch (error) {
+    setStatus("카메라를 열지 못했습니다. 직접 입력을 사용하세요", "warn");
+  }
+}
 
+async function stopCameraScan() {
+  if (state.scanTimer) {
+    window.clearInterval(state.scanTimer);
+    state.scanTimer = null;
+  }
+  if (state.scannerStream) {
+    state.scannerStream.getTracks().forEach((track) => track.stop());
+    state.scannerStream = null;
+  }
+  els.scanVideo.pause();
+  els.scanVideo.srcObject = null;
+  els.scanVideo.hidden = true;
+  els.scannerPlaceholder.hidden = false;
+  els.startScanButton.disabled = false;
+  els.stopScanButton.disabled = true;
+  state.scanBusy = false;
+}
+
+async function scanVideoFrame(detector) {
+  if (state.scanBusy || els.scanVideo.readyState < 2) return;
+  state.scanBusy = true;
+  try {
+    const codes = await detector.detect(els.scanVideo);
+    if (codes.length) {
+      await handleDetectedCode(codes[0].rawValue);
+    }
+  } catch {
+    setStatus("스캔 중 오류가 발생했습니다", "warn");
+  } finally {
+    state.scanBusy = false;
+  }
+}
+
+async function scanImageFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const detector = await createBarcodeDetector();
+  if (!detector) {
+    setStatus("이 브라우저는 이미지 바코드 인식을 지원하지 않습니다", "warn");
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    setStatus("이미지 스캔 중", "busy");
+    const bitmap = await createImageBitmap(file);
+    const codes = await detector.detect(bitmap);
+    bitmap.close?.();
+    if (!codes.length) {
+      setStatus("이미지에서 코드를 찾지 못했습니다", "warn");
+      return;
+    }
+    await handleDetectedCode(codes[0].rawValue);
+  } catch {
+    setStatus("이미지를 스캔하지 못했습니다", "warn");
+  } finally {
+    event.target.value = "";
+  }
+}
+
+async function handleDetectedCode(rawValue) {
+  const code = normalizeScannedCode(rawValue);
+  if (!code) {
+    setStatus("읽은 코드가 비어 있습니다", "warn");
+    return;
+  }
+  await stopCameraScan();
+  els.barcodeInput.value = code;
+  await lookupBarcode(code);
+}
+
+async function lookupBarcode(rawCode) {
+  const code = normalizeScannedCode(rawCode);
+  if (!code) {
+    setStatus("바코드나 QR 값을 입력하세요", "warn");
+    return;
+  }
+
+  setStatus("제품 조회 중", "busy");
+  try {
+    const response = await fetch(`/api/product?code=${encodeURIComponent(code)}`);
     const payload = await response.json();
     if (!response.ok) {
-      if (response.status === 501 || response.status === 404) {
-        await extractWithBrowserOcr();
-        return;
-      }
-      throw new Error(payload?.message || "이미지 추출에 실패했습니다.");
+      throw new Error(payload?.message || "제품 조회에 실패했습니다.");
     }
-
-    const nextDrafts = normalizeDrafts(payload.items || [], payload.platform || els.platformInput.value);
-    state.drafts = [...state.drafts, ...nextDrafts];
-    setStatus(`${nextDrafts.length}개 추출`, "ok");
-    renderDrafts();
+    applyProductLookup(code, payload);
   } catch (error) {
-    setStatus(error.message, "warn");
-  } finally {
-    els.extractButton.disabled = false;
+    state.currentProduct = { code, found: false, source: "manual" };
+    els.productNameInput.value = "";
+    els.quantityInput.value = els.quantityInput.value || "1개";
+    setExpiryFromName("");
+    setStatus("제품명을 직접 입력하세요", "warn");
+    els.productHint.textContent = "조회가 실패했습니다. 제품명, 수량, 소비기한을 직접 입력해 저장할 수 있습니다.";
   }
 }
 
-async function extractWithBrowserOcr() {
-  if (!window.Tesseract?.recognize) {
-    throw new Error("브라우저 OCR을 불러오지 못했습니다. 수동 입력을 사용하세요.");
+function applyProductLookup(code, payload) {
+  const product = payload.product || {};
+  state.currentProduct = {
+    code,
+    found: Boolean(payload.found),
+    source: payload.source || "manual",
+    product
+  };
+
+  if (payload.found && product.name) {
+    els.productNameInput.value = product.name;
+    els.quantityInput.value = product.quantity || "1개";
+    setExpiryFromName(product.name);
+    setStatus("제품 조회 완료", "ok");
+    els.productHint.textContent = `${payload.sourceLabel || "제품 DB"}에서 찾았습니다. 실제 포장 소비기한이 보이면 날짜를 수정하세요.`;
+    return;
   }
 
-  setStatus("브라우저 OCR 분석 중", "busy");
-  const result = await window.Tesseract.recognize(state.selectedImage, "kor+eng", {
-    logger(progress) {
-      if (progress.status === "recognizing text") {
-        setStatus(`브라우저 OCR ${Math.round(progress.progress * 100)}%`, "busy");
-      }
-    }
-  });
-
-  const drafts = extractDraftsFromText(result.data?.text || "");
-  if (!drafts.length) {
-    throw new Error("이미지에서 재료를 찾지 못했습니다. 수동 입력을 사용하세요.");
-  }
-
-  state.drafts = [...state.drafts, ...drafts];
-  setStatus(`${drafts.length}개 OCR 추출`, "ok");
-  renderDrafts();
+  els.productNameInput.value = "";
+  els.quantityInput.value = els.quantityInput.value || "1개";
+  setExpiryFromName("");
+  setStatus("제품명을 직접 입력하세요", "warn");
+  els.productHint.textContent = "공개 제품 DB에서 찾지 못했습니다. 이름을 직접 입력하면 다음부터 냉장고 재료로 관리됩니다.";
 }
 
-function addManualDrafts() {
-  const lines = els.manualInput.value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (!lines.length) {
-    setStatus("수동 입력 내용이 없습니다", "warn");
+function addProductDraft() {
+  const name = els.productNameInput.value.trim();
+  const code = normalizeScannedCode(els.barcodeInput.value);
+  if (!name) {
+    setStatus("제품명을 입력하세요", "warn");
+    els.productNameInput.focus();
     return;
   }
 
   const purchaseDate = parseDateInput(els.purchaseDateInput.value);
-  const drafts = lines.map((line) => {
-    const parsed = parseManualLine(line);
-    const rule = inferRule(parsed.name);
-    return {
-      id: makeId(),
-      name: parsed.name,
-      quantity: parsed.quantity,
-      category: rule.category,
-      storage: rule.storage,
-      platform: els.platformInput.value,
-      purchaseDate: toDateInputValue(purchaseDate),
-      expiresAt: toDateInputValue(addDays(purchaseDate, rule.days)),
-      confidence: "수동 입력",
-      source: "manual"
-    };
-  });
+  const rule = inferRule(name);
+  const draft = {
+    id: makeId(),
+    name,
+    quantity: els.quantityInput.value.trim() || "1개",
+    category: state.currentProduct?.product?.category || rule.category,
+    storage: els.storageInput.value || rule.storage,
+    platform: code ? `스캔 ${code}` : "직접 입력",
+    purchaseDate: toDateInputValue(purchaseDate),
+    expiresAt: els.expiryDateInput.value || toDateInputValue(addDays(purchaseDate, rule.days)),
+    confidence: state.currentProduct?.found ? "바코드 조회" : code ? "코드 직접 등록" : "직접 입력",
+    source: "scan",
+    barcode: code
+  };
 
-  state.drafts = [...state.drafts, ...drafts];
-  els.manualInput.value = "";
-  setStatus(`${drafts.length}개 추가`, "ok");
+  state.drafts = [draft, ...state.drafts];
+  clearProductForm();
+  setStatus("대기 목록에 추가됨", "ok");
   renderDrafts();
+}
+
+function clearProductForm() {
+  state.currentProduct = null;
+  els.barcodeInput.value = "";
+  els.productNameInput.value = "";
+  els.quantityInput.value = "";
+  els.storageInput.value = "냉장";
+  setExpiryFromName("");
+  els.productHint.textContent = "스캔 후 조회 결과를 확인하고, 실제 포장 소비기한이 보이면 날짜를 수정하세요.";
+}
+
+function setExpiryFromName(name) {
+  const purchaseDate = parseDateInput(els.purchaseDateInput.value);
+  const rule = inferRule(name);
+  els.storageInput.value = rule.storage;
+  els.expiryDateInput.value = toDateInputValue(addDays(purchaseDate, rule.days));
+}
+
+async function createBarcodeDetector() {
+  if (!("BarcodeDetector" in window)) return null;
+  const desired = ["qr_code", "ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"];
+  try {
+    const supported = await window.BarcodeDetector.getSupportedFormats?.();
+    const formats = Array.isArray(supported) ? desired.filter((format) => supported.includes(format)) : desired;
+    return new window.BarcodeDetector(formats.length ? { formats } : undefined);
+  } catch {
+    try {
+      return new window.BarcodeDetector();
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeScannedCode(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\/[^?]+\?/i, "")
+    .replace(/^barcode[:=]/i, "")
+    .trim();
 }
 
 function loadSample() {
   const purchaseDate = new Date();
   const sample = [
-    { name: "국산 두부 300g", quantity: "2팩" },
-    { name: "샐러드 채소", quantity: "1봉" },
-    { name: "무항생제 계란 30구", quantity: "1판" },
-    { name: "냉동 만두", quantity: "1봉" },
-    { name: "토마토", quantity: "6개" },
-    { name: "닭가슴살", quantity: "3팩" }
+    { name: "국산 두부 300g", quantity: "2팩", barcode: "8800000000011" },
+    { name: "샐러드 채소", quantity: "1봉", barcode: "8800000000028" },
+    { name: "무항생제 계란 30구", quantity: "1판", barcode: "8800000000035" },
+    { name: "냉동 만두", quantity: "1봉", barcode: "8800000000042" },
+    { name: "토마토", quantity: "6개", barcode: "8800000000059" },
+    { name: "닭가슴살", quantity: "3팩", barcode: "8800000000066" }
   ].map((item) => {
     const rule = inferRule(item.name);
     return {
@@ -261,15 +386,16 @@ function loadSample() {
       quantity: item.quantity,
       category: rule.category,
       storage: rule.storage,
-      platform: "샘플",
+      platform: `샘플 ${item.barcode}`,
       purchaseDate: toDateInputValue(purchaseDate),
       expiresAt: toDateInputValue(addDays(purchaseDate, rule.days)),
       confidence: "샘플 데이터",
-      source: "sample"
+      source: "sample",
+      barcode: item.barcode
     };
   });
 
-  state.drafts = [...state.drafts, ...sample];
+  state.drafts = [...sample, ...state.drafts];
   setStatus("샘플 추가됨", "ok");
   renderDrafts();
 }
@@ -354,6 +480,7 @@ function renderInventory() {
     const dayCount = daysUntil(item.expiresAt);
     const chipClass = dayCount < 0 ? "overdue" : dayCount <= 3 ? "due" : "";
     const chipText = dayCount < 0 ? `${Math.abs(dayCount)}일 지남` : `D-${dayCount}`;
+    const barcodeLabel = item.barcode ? ` · ${escapeHtml(item.barcode)}` : "";
 
     article.innerHTML = `
       <div class="item-title-row">
@@ -361,7 +488,7 @@ function renderInventory() {
         <span class="expiry-chip ${chipClass}">${chipText}</span>
       </div>
       <div class="inventory-meta">
-        <span>${escapeHtml(item.quantity)} · ${escapeHtml(item.storage)} · ${escapeHtml(item.platform)}</span>
+        <span>${escapeHtml(item.quantity)} · ${escapeHtml(item.storage)}${barcodeLabel}</span>
         <span>${formatKoreanDate(item.expiresAt)}</span>
       </div>
       <div class="inventory-actions"></div>
@@ -447,82 +574,8 @@ function renderRecipes() {
   });
 }
 
-function normalizeDrafts(items, platform) {
-  const purchaseDate = parseDateInput(els.purchaseDateInput.value);
-  return items
-    .filter((item) => item.name)
-    .map((item) => {
-      const rule = inferRule(item.name);
-      const expiresAt = item.expiresAt || item.expirationDate || toDateInputValue(addDays(purchaseDate, item.shelfLifeDays || rule.days));
-      return {
-        id: makeId(),
-        name: item.name,
-        quantity: item.quantity || "1개",
-        category: item.category || rule.category,
-        storage: item.storage || rule.storage,
-        platform,
-        purchaseDate: item.purchaseDate || toDateInputValue(purchaseDate),
-        expiresAt,
-        confidence: item.confidence ? `신뢰도 ${Math.round(Number(item.confidence) * 100)}%` : "자동 추출",
-        source: "image"
-      };
-    });
-}
-
-function parseManualLine(line) {
-  const quantityMatch = line.match(/(\d+\s?(개|팩|봉|판|병|캔|묶음|kg|g|구|입|세트))$/i);
-  if (!quantityMatch) {
-    return { name: line, quantity: "1개" };
-  }
-  return {
-    name: line.slice(0, quantityMatch.index).trim(),
-    quantity: quantityMatch[0].replace(/\s+/g, "")
-  };
-}
-
-function extractDraftsFromText(text) {
-  const purchaseDate = parseDateInput(els.purchaseDateInput.value);
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.replace(/[|:[\]{}]/g, " ").replace(/\s+/g, " ").trim())
-    .filter(isLikelyFoodLine)
-    .slice(0, 18)
-    .map((line) => {
-      const parsed = parseManualLine(cleanOcrItemName(line));
-      const rule = inferRule(parsed.name);
-      return {
-        id: makeId(),
-        name: parsed.name,
-        quantity: parsed.quantity,
-        category: rule.category,
-        storage: rule.storage,
-        platform: els.platformInput.value,
-        purchaseDate: toDateInputValue(purchaseDate),
-        expiresAt: toDateInputValue(addDays(purchaseDate, rule.days)),
-        confidence: "브라우저 OCR",
-        source: "ocr"
-      };
-    });
-}
-
-function isLikelyFoodLine(line) {
-  if (line.length < 3 || line.length > 80) return false;
-  const lower = line.toLowerCase();
-  const blocked = ["주문", "배송", "결제", "할인", "쿠폰", "합계", "총액", "무료", "로켓", "컬리", "장바구니", "리뷰", "상품준비", "완료"];
-  if (blocked.some((word) => lower.includes(word.toLowerCase()))) return false;
-  return shelfLifeRules.some((rule) => rule.keywords.some((keyword) => lower.includes(keyword.toLowerCase()))) || /[가-힣]{2,}.*(\d+\s?(개|팩|봉|판|병|캔|구|입|g|kg))?/i.test(line);
-}
-
-function cleanOcrItemName(line) {
-  return line
-    .replace(/\d{1,3}(,\d{3})*원/g, "")
-    .replace(/\b\d{4}[.-]\d{1,2}[.-]\d{1,2}\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function inferRule(name) {
-  const normalized = name.toLowerCase();
+  const normalized = String(name || "").toLowerCase();
   return shelfLifeRules.find((rule) => rule.keywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) || {
     days: 7,
     storage: "냉장",
@@ -633,15 +686,6 @@ function readItems() {
 
 function persistItems() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("이미지를 읽지 못했습니다."));
-    reader.readAsDataURL(file);
-  });
 }
 
 function parseDateInput(value) {
