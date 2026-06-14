@@ -29,15 +29,23 @@
             <span class="status-pill" id="apiStatus">사진 업로드 준비</span>
           </div>
 
-          <label class="dropzone" for="labelPhotoInput">
+          <label class="dropzone" for="cameraPhotoInput">
+            <input id="cameraPhotoInput" type="file" accept="image/*" capture="environment">
+            <span class="dropzone-title">카메라로 바로 촬영</span>
+            <span class="dropzone-copy">제품명과 소비기한이 같이 보이게 찍으세요. 여러 제품은 한 장씩 계속 촬영해 추가합니다.</span>
+          </label>
+
+          <label class="compact-upload" for="labelPhotoInput">
             <input id="labelPhotoInput" type="file" accept="image/*" multiple>
-            <span class="dropzone-title">제품명과 소비기한이 보이게 촬영한 사진 업로드</span>
-            <span class="dropzone-copy">여러 장을 한 번에 올릴 수 있습니다. 추출 결과는 저장 전 수정할 수 있습니다.</span>
+            사진 파일에서 추가
           </label>
 
           <div class="photo-list" id="photoList"></div>
 
-          <button class="primary-button wide" id="analyzeButton" type="button" disabled>사진에서 추출</button>
+          <div class="button-row">
+            <button class="primary-button" id="analyzeButton" type="button" disabled>사진에서 추출</button>
+            <button class="secondary-button" id="clearPhotosButton" type="button" disabled>촬영 목록 비우기</button>
+          </div>
 
           <div class="product-form manual-card">
             <div class="panel-head compact-head">
