@@ -64,6 +64,7 @@ const state = {
   items: readItems(),
   filter: "active",
   visibleMonth: startOfMonth(new Date()),
+  html5Scanner: null,
   scannerStream: null,
   scanTimer: null,
   scanBusy: false,
@@ -72,6 +73,7 @@ const state = {
 
 const els = {
   apiStatus: document.querySelector("#apiStatus"),
+  html5QrReader: document.querySelector("#html5QrReader"),
   scanVideo: document.querySelector("#scanVideo"),
   scannerPlaceholder: document.querySelector("#scannerPlaceholder"),
   startScanButton: document.querySelector("#startScanButton"),
@@ -147,9 +149,14 @@ function bindEvents() {
 }
 
 async function startCameraScan() {
+  if (window.Html5Qrcode) {
+    await startHtml5Scan();
+    return;
+  }
+
   const detector = await createBarcodeDetector();
   if (!detector) {
-    setStatus("이 브라우저는 카메라 바코드 인식을 지원하지 않습니다", "warn");
+    setStatus("스캔 라이브러리를 불러오지 못했습니다. 직접 입력을 사용하세요", "warn");
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -175,7 +182,57 @@ async function startCameraScan() {
   }
 }
 
+async function startHtml5Scan() {
+  try {
+    if (state.html5Scanner) {
+      await stopCameraScan();
+    }
+
+    const scanner = new window.Html5Qrcode("html5QrReader", {
+      formatsToSupport: getHtml5Formats(),
+      verbose: false
+    });
+    state.html5Scanner = scanner;
+    els.html5QrReader.hidden = false;
+    els.scanVideo.hidden = true;
+    els.scannerPlaceholder.hidden = true;
+
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 260, height: 170 },
+        aspectRatio: 1.7777778
+      },
+      async (decodedText) => {
+        if (state.scanBusy) return;
+        state.scanBusy = true;
+        await handleDetectedCode(decodedText);
+      },
+      () => {}
+    );
+
+    els.startScanButton.disabled = true;
+    els.stopScanButton.disabled = false;
+    setStatus("스캔 중", "busy");
+  } catch (error) {
+    state.html5Scanner = null;
+    els.html5QrReader.hidden = true;
+    els.scannerPlaceholder.hidden = false;
+    setStatus("카메라를 열지 못했습니다. 권한을 허용하거나 직접 입력을 사용하세요", "warn");
+  }
+}
+
 async function stopCameraScan() {
+  if (state.html5Scanner) {
+    try {
+      await state.html5Scanner.stop();
+    } catch {}
+    try {
+      await state.html5Scanner.clear();
+    } catch {}
+    state.html5Scanner = null;
+  }
   if (state.scanTimer) {
     window.clearInterval(state.scanTimer);
     state.scanTimer = null;
@@ -187,6 +244,7 @@ async function stopCameraScan() {
   els.scanVideo.pause();
   els.scanVideo.srcObject = null;
   els.scanVideo.hidden = true;
+  els.html5QrReader.hidden = true;
   els.scannerPlaceholder.hidden = false;
   els.startScanButton.disabled = false;
   els.stopScanButton.disabled = true;
@@ -212,9 +270,34 @@ async function scanImageFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
 
+  if (window.Html5Qrcode) {
+    try {
+      await stopCameraScan();
+      setStatus("이미지 스캔 중", "busy");
+      els.html5QrReader.hidden = false;
+      els.scannerPlaceholder.hidden = true;
+      const scanner = new window.Html5Qrcode("html5QrReader", {
+        formatsToSupport: getHtml5Formats(),
+        verbose: false
+      });
+      const decodedText = await scanner.scanFile(file, false);
+      await scanner.clear().catch(() => {});
+      els.html5QrReader.hidden = true;
+      els.scannerPlaceholder.hidden = false;
+      await handleDetectedCode(decodedText);
+      return;
+    } catch {
+      els.html5QrReader.hidden = true;
+      els.scannerPlaceholder.hidden = false;
+      setStatus("이미지에서 코드를 찾지 못했습니다", "warn");
+      event.target.value = "";
+      return;
+    }
+  }
+
   const detector = await createBarcodeDetector();
   if (!detector) {
-    setStatus("이 브라우저는 이미지 바코드 인식을 지원하지 않습니다", "warn");
+    setStatus("이미지 스캔 라이브러리를 불러오지 못했습니다", "warn");
     event.target.value = "";
     return;
   }
@@ -245,6 +328,21 @@ async function handleDetectedCode(rawValue) {
   await stopCameraScan();
   els.barcodeInput.value = code;
   await lookupBarcode(code);
+}
+
+function getHtml5Formats() {
+  if (!window.Html5QrcodeSupportedFormats) return undefined;
+  const formats = window.Html5QrcodeSupportedFormats;
+  return [
+    formats.QR_CODE,
+    formats.EAN_13,
+    formats.EAN_8,
+    formats.UPC_A,
+    formats.UPC_E,
+    formats.CODE_128,
+    formats.CODE_39,
+    formats.ITF
+  ].filter(Boolean);
 }
 
 async function lookupBarcode(rawCode) {
