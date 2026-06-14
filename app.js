@@ -167,6 +167,10 @@ async function extractFromImage() {
 
     const payload = await response.json();
     if (!response.ok) {
+      if (response.status === 501 || response.status === 404) {
+        await extractWithBrowserOcr();
+        return;
+      }
       throw new Error(payload?.message || "이미지 추출에 실패했습니다.");
     }
 
@@ -179,6 +183,30 @@ async function extractFromImage() {
   } finally {
     els.extractButton.disabled = false;
   }
+}
+
+async function extractWithBrowserOcr() {
+  if (!window.Tesseract?.recognize) {
+    throw new Error("브라우저 OCR을 불러오지 못했습니다. 수동 입력을 사용하세요.");
+  }
+
+  setStatus("브라우저 OCR 분석 중", "busy");
+  const result = await window.Tesseract.recognize(state.selectedImage, "kor+eng", {
+    logger(progress) {
+      if (progress.status === "recognizing text") {
+        setStatus(`브라우저 OCR ${Math.round(progress.progress * 100)}%`, "busy");
+      }
+    }
+  });
+
+  const drafts = extractDraftsFromText(result.data?.text || "");
+  if (!drafts.length) {
+    throw new Error("이미지에서 재료를 찾지 못했습니다. 수동 입력을 사용하세요.");
+  }
+
+  state.drafts = [...state.drafts, ...drafts];
+  setStatus(`${drafts.length}개 OCR 추출`, "ok");
+  renderDrafts();
 }
 
 function addManualDrafts() {
@@ -450,6 +478,47 @@ function parseManualLine(line) {
     name: line.slice(0, quantityMatch.index).trim(),
     quantity: quantityMatch[0].replace(/\s+/g, "")
   };
+}
+
+function extractDraftsFromText(text) {
+  const purchaseDate = parseDateInput(els.purchaseDateInput.value);
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[|:[\]{}]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(isLikelyFoodLine)
+    .slice(0, 18)
+    .map((line) => {
+      const parsed = parseManualLine(cleanOcrItemName(line));
+      const rule = inferRule(parsed.name);
+      return {
+        id: makeId(),
+        name: parsed.name,
+        quantity: parsed.quantity,
+        category: rule.category,
+        storage: rule.storage,
+        platform: els.platformInput.value,
+        purchaseDate: toDateInputValue(purchaseDate),
+        expiresAt: toDateInputValue(addDays(purchaseDate, rule.days)),
+        confidence: "브라우저 OCR",
+        source: "ocr"
+      };
+    });
+}
+
+function isLikelyFoodLine(line) {
+  if (line.length < 3 || line.length > 80) return false;
+  const lower = line.toLowerCase();
+  const blocked = ["주문", "배송", "결제", "할인", "쿠폰", "합계", "총액", "무료", "로켓", "컬리", "장바구니", "리뷰", "상품준비", "완료"];
+  if (blocked.some((word) => lower.includes(word.toLowerCase()))) return false;
+  return shelfLifeRules.some((rule) => rule.keywords.some((keyword) => lower.includes(keyword.toLowerCase()))) || /[가-힣]{2,}.*(\d+\s?(개|팩|봉|판|병|캔|구|입|g|kg))?/i.test(line);
+}
+
+function cleanOcrItemName(line) {
+  return line
+    .replace(/\d{1,3}(,\d{3})*원/g, "")
+    .replace(/\b\d{4}[.-]\d{1,2}[.-]\d{1,2}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function inferRule(name) {
