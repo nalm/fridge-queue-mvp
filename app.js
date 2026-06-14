@@ -70,9 +70,11 @@ const state = {
 
 const els = {
   apiStatus: document.querySelector("#apiStatus"),
+  cameraPhotoInput: document.querySelector("#cameraPhotoInput"),
   labelPhotoInput: document.querySelector("#labelPhotoInput"),
   photoList: document.querySelector("#photoList"),
   analyzeButton: document.querySelector("#analyzeButton"),
+  clearPhotosButton: document.querySelector("#clearPhotosButton"),
   manualNameInput: document.querySelector("#manualNameInput"),
   manualQuantityInput: document.querySelector("#manualQuantityInput"),
   manualStorageInput: document.querySelector("#manualStorageInput"),
@@ -107,8 +109,10 @@ function init() {
 }
 
 function bindEvents() {
-  els.labelPhotoInput.addEventListener("change", handlePhotoSelection);
+  els.cameraPhotoInput.addEventListener("change", (event) => handlePhotoSelection(event, { append: true, source: "camera" }));
+  els.labelPhotoInput.addEventListener("change", (event) => handlePhotoSelection(event, { append: true, source: "library" }));
   els.analyzeButton.addEventListener("click", analyzeSelectedPhotos);
+  els.clearPhotosButton.addEventListener("click", clearSelectedPhotos);
   els.manualNameInput.addEventListener("input", syncManualDefaults);
   els.manualAddButton.addEventListener("click", addManualDraft);
   els.sampleButton.addEventListener("click", loadSample);
@@ -132,18 +136,36 @@ function bindEvents() {
   });
 }
 
-function handlePhotoSelection(event) {
-  revokePhotoUrls();
-  state.selectedPhotos = [...event.target.files].map((file) => ({
+function handlePhotoSelection(event, options = {}) {
+  const files = [...event.target.files];
+  if (!files.length) return;
+  if (!options.append) {
+    revokePhotoUrls();
+    state.selectedPhotos = [];
+  }
+  const nextPhotos = files.map((file) => ({
     id: makeId(),
     file,
     url: URL.createObjectURL(file),
     status: "대기",
     progress: 0,
-    text: ""
+    text: "",
+    source: options.source || "file"
   }));
+  state.selectedPhotos = [...state.selectedPhotos, ...nextPhotos];
+  event.target.value = "";
   els.analyzeButton.disabled = state.selectedPhotos.length === 0;
-  setStatus(state.selectedPhotos.length ? `${state.selectedPhotos.length}장 선택됨` : "사진 업로드 준비", "ok");
+  els.clearPhotosButton.disabled = state.selectedPhotos.length === 0;
+  setStatus(`${state.selectedPhotos.length}장 촬영/선택됨`, "ok");
+  renderPhotoList();
+}
+
+function clearSelectedPhotos() {
+  revokePhotoUrls();
+  state.selectedPhotos = [];
+  els.analyzeButton.disabled = true;
+  els.clearPhotosButton.disabled = true;
+  setStatus("사진 촬영 준비", "ok");
   renderPhotoList();
 }
 
@@ -189,6 +211,7 @@ async function analyzeSelectedPhotos() {
   } finally {
     state.analyzing = false;
     els.analyzeButton.disabled = state.selectedPhotos.length === 0;
+    els.clearPhotosButton.disabled = state.selectedPhotos.length === 0;
   }
 }
 
