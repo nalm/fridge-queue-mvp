@@ -24,56 +24,40 @@
           <div class="panel-head">
             <div>
               <p class="section-kicker">입력</p>
-              <h2 id="intakeTitle">제품 스캔 등록</h2>
+              <h2 id="intakeTitle">소비기한 사진 등록</h2>
             </div>
-            <span class="status-pill" id="apiStatus">스캐너 준비</span>
+            <span class="status-pill" id="apiStatus">사진 업로드 준비</span>
           </div>
 
-          <div class="scanner-box">
-            <div id="html5QrReader" hidden></div>
-            <video id="scanVideo" playsinline muted hidden></video>
-            <div class="scanner-placeholder" id="scannerPlaceholder">
-              <strong>바코드나 QR코드를 카메라에 맞추세요</strong>
-              <span>EAN-13, EAN-8, UPC, Code 128, QR 코드 인식을 시도합니다.</span>
-            </div>
-          </div>
-
-          <div class="button-row">
-            <button class="primary-button" id="startScanButton" type="button">카메라 스캔</button>
-            <button class="secondary-button" id="stopScanButton" type="button" disabled>스캔 중지</button>
-          </div>
-
-          <label class="compact-upload" for="barcodeImageInput">
-            <input id="barcodeImageInput" type="file" accept="image/*">
-            바코드/QR 이미지로 스캔
+          <label class="dropzone" for="labelPhotoInput">
+            <input id="labelPhotoInput" type="file" accept="image/*" multiple>
+            <span class="dropzone-title">제품명과 소비기한이 보이게 촬영한 사진 업로드</span>
+            <span class="dropzone-copy">여러 장을 한 번에 올릴 수 있습니다. 추출 결과는 저장 전 수정할 수 있습니다.</span>
           </label>
 
-          <div class="field-grid">
-            <label>
-              바코드/QR 값
-              <input id="barcodeInput" type="text" inputmode="numeric" placeholder="숫자 바코드 또는 QR 내용">
-            </label>
-            <label>
-              구매일
-              <input id="purchaseDateInput" type="date">
-            </label>
-          </div>
+          <div class="photo-list" id="photoList"></div>
 
-          <button class="secondary-button wide tight" id="lookupButton" type="button">제품 조회</button>
+          <button class="primary-button wide" id="analyzeButton" type="button" disabled>사진에서 추출</button>
 
-          <div class="product-form">
+          <div class="product-form manual-card">
+            <div class="panel-head compact-head">
+              <div>
+                <p class="section-kicker">직접 입력</p>
+                <h2>추출 실패 시 추가</h2>
+              </div>
+            </div>
             <label>
               제품명
-              <input id="productNameInput" type="text" placeholder="예: 국산 두부 300g">
+              <input id="manualNameInput" type="text" placeholder="예: 오리지널 핫도그">
             </label>
             <div class="field-grid">
               <label>
                 수량
-                <input id="quantityInput" type="text" placeholder="1개">
+                <input id="manualQuantityInput" type="text" placeholder="1개">
               </label>
               <label>
                 보관
-                <select id="storageInput">
+                <select id="manualStorageInput">
                   <option value="냉장">냉장</option>
                   <option value="냉동">냉동</option>
                   <option value="실온">실온</option>
@@ -82,12 +66,10 @@
             </div>
             <label>
               소비기한
-              <input id="expiryDateInput" type="date">
+              <input id="manualExpiryInput" type="date">
             </label>
-            <p class="form-hint" id="productHint">스캔 후 조회 결과를 확인하고, 실제 포장 소비기한이 보이면 날짜를 수정하세요.</p>
+            <button class="secondary-button wide tight" id="manualAddButton" type="button">대기 목록에 추가</button>
           </div>
-
-          <button class="primary-button wide" id="addProductButton" type="button">대기 목록에 추가</button>
         </section>
 
         <section class="panel review-panel" aria-labelledby="reviewTitle">
@@ -99,7 +81,7 @@
             <span class="count-badge" id="draftCount">0개</span>
           </div>
           <div class="draft-list" id="draftList"></div>
-          <div class="empty-state" id="draftEmpty">제품을 스캔하거나 직접 입력해 재료를 추가하세요.</div>
+          <div class="empty-state" id="draftEmpty">사진을 분석하거나 직접 입력해 재료를 추가하세요.</div>
           <button class="primary-button wide" id="saveDraftsButton" type="button">냉장고에 저장</button>
         </section>
 
@@ -192,7 +174,7 @@
       </article>
     </template>
 
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="app.js" type="module"></script>
   </body>
 </html>
