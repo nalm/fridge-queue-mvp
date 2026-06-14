@@ -18,6 +18,17 @@ GitHub 저장소: https://github.com/nalm/fridge-queue-mvp
 - 바코드 숫자 또는 QR 내용 직접 입력
 - 공개 제품 데이터베이스에서 제품명을 찾지 못하면 사용자가 제품명, 수량, 소비기한을 직접 입력
 
+## 카메라 스캔 안내
+
+앱은 먼저 html5-qrcode 기반 스캔을 사용하고, 가능한 브라우저에서는 내장 BarcodeDetector도 보조로 사용합니다.
+
+카메라가 열리지 않으면 아래를 확인합니다.
+
+- `https://deploy-fridge-queue-mvp.vercel.app` 주소로 접속했는지 확인
+- 브라우저 주소창의 카메라 권한을 허용
+- 모바일에서는 Chrome, Edge, Safari 최신 버전 사용
+- 카메라가 계속 막히면 바코드 숫자를 직접 입력하거나 바코드 사진을 업로드
+
 ## 로컬 실행
 
 ```powershell
